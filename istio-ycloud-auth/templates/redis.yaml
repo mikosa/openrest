@@ -1,0 +1,58 @@
+{{- if .Values.redis.enabled -}}
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: {{ .Values.redis.containerName }}
+  namespace: {{ .Values.redis.namespace }}
+spec:
+  selector:
+    matchLabels:
+      app: {{ .Values.redis.containerName }}
+      release: {{ .Release.Name }}
+      heritage: {{ .Release.Service }}
+  replicas: 1
+  template:
+    metadata:
+      annotations:
+        sidecar.istio.io/inject: "true"
+      labels:
+        app: {{ .Values.redis.containerName }}
+        release: {{ .Release.Name }}
+        heritage: {{ .Release.Service }}
+    spec:
+      containers:
+      - name: {{ .Values.redis.containerName }}
+        image: "{{ .Values.redis.image.repository }}:{{ .Values.redis.image.tag }}"
+        imagePullPolicy: {{ .Values.redis.image.pullPolicy }}
+        args:
+        - "--appendonly"
+        - "yes"
+        - "--bind"
+        - {{ .Values.redis.ipBind }}
+        ports:
+        - name: tcp
+          protocol: TCP
+          containerPort: 6379
+        command: ["redis-server"]
+        resources:
+          limits:
+            memory: 300Mi
+            cpu: 300
+          requests:
+            cpu: 300m
+            memory: 300Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.redis.containerName }}
+  namespace: {{ .Values.redis.namespace }}
+spec:
+  ports:
+  - name: tcp
+    protocol: TCP
+    port: {{ .Values.redis.servicePort }}
+    targetPort: tcp
+  selector:
+    app: {{ .Values.redis.containerName }}
+{{ end }}

@@ -1,0 +1,110 @@
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: mywebsite
+  namespace: website
+spec:
+  selector:
+    matchLabels:
+      app: mywebsite
+  replicas: 1
+  template:
+    metadata:
+      annotations:
+        sidecar.istio.io/inject: "true"
+      labels:
+        name: mywebsite
+        app: mywebsite
+        version: 1.0.0
+    spec:
+      containers:
+      - name: mywebsite
+        image: nginx
+        ports:
+        - name: http-aaa
+          protocol: TCP
+          containerPort: 80
+        volumeMounts:
+        - name: index
+          mountPath: /usr/share/nginx/html
+        - name: securepage
+          mountPath: /usr/share/nginx/html/secure
+      volumes:
+      - name: index
+        configMap:
+          name: nginx-index-config
+      - name: securepage
+        configMap:
+          name: nginx-securepage-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: great
+  namespace: website
+spec:
+  type: LoadBalancer
+  ports:
+  - port: 80
+    targetPort: 80
+  selector:
+    app: mywebsite
+---
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-index-config
+  namespace: website
+data:
+  index.html: |
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <title>Istio Authentication Example</title>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1">
+      <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.4.0/css/bootstrap.min.css">
+      <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js"></script>
+      <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.4.0/js/bootstrap.min.js"></script>
+    </head>
+    <body>
+    <div class="container">
+      <div class="jumbotron">
+        <h1>My Awesome Website</h1>      
+        <p>This website allows traffic to all path addresses except for the /secure path</p>
+      </div>
+      <a role="button" href="secure/mysecurepage.html" class="btn btn-primary btn-lg">Login Here</a>     
+      <p>You will be forwarded to a secure path</p>      
+    </div>
+    </body>
+    </html>
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-securepage-config
+  namespace: website
+  labels:
+    addonmanager.kubernetes.io/mode: Reconcile
+data:
+  mysecurepage.html: |
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <title>Istio Authentication Example</title>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1">
+      <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.4.0/css/bootstrap.min.css">
+      <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js"></script>
+      <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.4.0/js/bootstrap.min.js"></script>
+    </head>
+    <body>
+    <div class="container">
+      <div style="background:green !important" class="jumbotron">
+        <h1>You Are Now Logged In</h1>      
+        <p>Only Allowed Users belonging to "GroupC4" Can See This Page</p>
+      </div>      
+    </div>
+    </body>
+    </html>

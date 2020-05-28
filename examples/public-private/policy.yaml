@@ -1,0 +1,28 @@
+apiVersion: authentication.istio.io/v1alpha1
+kind: Policy
+metadata:
+  name: policy
+  namespace: website
+spec:
+  targets:
+    - name: great
+  # peers:
+  #   - mtls: {}
+  origins:
+    - jwt:
+        issuer: ycloudtest.accounts400.ondemand.com
+        jwksUri: https://api.cockpit.stage.faros.kyma.cx/c4/.well-known/jwks.json
+        jwt_headers:
+        - "myjwt"
+  principalBinding: USE_ORIGIN
+---
+# apiVersion: authentication.istio.io/v1alpha1
+# kind: MeshPolicy
+# metadata:
+#   name: default
+# spec:
+#   origins:
+#     - jwt:
+#         issuer: ycloudtest.accounts400.ondemand.com
+#         jwksUri: https://api.cockpit.stage.faros.kyma.cx/c4/.well-known/jwks.json
+#   principalBinding: USE_ORIGIN

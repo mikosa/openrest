@@ -1,0 +1,17 @@
+
+apiVersion: networking.istio.io/v1alpha3
+kind: ServiceEntry
+metadata:
+  name: external-svc-https
+  namespace: nginx
+spec:
+  hosts:
+  - ycloudtest.accounts400.ondemand.com
+  - "*.{{ .Values.domain_name }}"
+  location: MESH_EXTERNAL
+  ports:
+  - number: 15443
+    name: https2
+    protocol: TLS
+  resolution: NONE
+

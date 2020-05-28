@@ -1,0 +1,167 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-config
+  namespace: {{ .Values.nginx.namespace }}
+  labels:
+    addonmanager.kubernetes.io/mode: Reconcile
+data:
+  main.conf: |
+    log_format main '$proxy_host  -  $upstream_addr  -  $remote_addr - $remote_user [$time_local] '
+                        '"$request" $status $body_bytes_sent '
+                        '"$http_referer" "$http_user_agent" "$gzip_ratio"';
+    access_log /dev/stdout main ;
+    
+    server {
+      listen       80;
+      set $webdomain    "stage.graph.sap";
+      server_name  stage.graph.sap;
+      
+    #  set $session.cookie.persistent       false;
+    #  set $session_cookie_lifetime 3600;
+    #  set $session.cookie.samesite  lax; # other option is strict
+    #  set $session.cookie.secure    on; # sends cookie over https only 
+    #  set $session_cookie_httponly  on;
+
+      
+
+      set $session_storage             redis;
+      set $session_redis_prefix        sessions;
+      set $session_redis_host          redis.nginx.svc.cluster.local;
+      set $session_redis_port          6379;
+     # check session user agent
+      set $session_check_ua          off; #check user agent
+      set $session.check.addr        off; #check the ip address
+      set $session_check_scheme      off; # check same protocol
+      set $session_cipher            none; # aes to encrypt
+
+      resolver kube-dns.kube-system.svc.cluster.local valid=5s;
+
+    location / {
+        set $targeturl "";
+        set $jwt_token ""; 
+        rewrite_by_lua '
+            ngx.header.content_type = "text/html; charset=UTF-8"
+            local session = require "resty.session".open()
+            if session.present then
+              if session.data.token then
+                ngx.var.jwt_token = session.data.token 
+              end
+            end
+        '; 
+
+        set $subdomain "";
+        if ($host ~* "^(.+)\.cluster1.olibato.com$") {                             
+          set $subdomain $1;                                         
+        }
+        proxy_pass                    http://$host:15443; 
+        proxy_set_header              myjwt $jwt_token;
+        proxy_http_version            1.1;
+        proxy_intercept_errors        on;
+
+        if ( $arg_code ) { return 431; }
+        error_page 401 = @sendlogin;
+        error_page 431 = @getjwtpost;
+        }
+    
+    location @sendlogin {
+       # add new session id creation (START)
+        content_by_lua '                
+                local session = require "resty.session".new()
+                session.cookie.domain = ngx.var.webdomain
+                session:start()
+                session.data.host = ngx.var.host..ngx.var.request_uri 
+                session.data.token = " "
+                session:save()
+                local url = "https://ycloudtest.accounts400.ondemand.com/oauth2/authorize?response_type=code&client_id=T000046&scope=openid&redirect_uri=http://auth."..ngx.var.webdomain.."/authentication"        
+                return ngx.redirect(url,302)
+            ';
+        }
+
+    location /authentication {
+          default_type text/html;
+          set $targeturl "";
+          content_by_lua '
+
+              local args = ngx.req.get_uri_args()
+              if args.code then
+                local redirect_uri = "client_id=T000046&grant_type=authorization_code&response_type=token&code="..args.code.."&redirect_uri=http%3A%2F%2Fauth."..ngx.var.webdomain.."%2Fauthentication"
+                local http = require "resty.http"
+                local httpc = http.new()
+                local res, err = httpc:request_uri("https://ycloudtest.accounts400.ondemand.com/oauth2/token", {
+                    method = "POST",
+                    body = redirect_uri,
+                    headers = {
+                      ["Content-Type"] = "application/x-www-form-urlencoded",
+                      ["Authorization"] = "Basic VDAwMDA0NjpTc2ltYmFsYWxhQEAx",
+                    },
+                    ssl_verify = false
+                  })
+                local url = "grafana"..ngx.var.webdomain
+                if res then
+                  local cjson = require("cjson")
+                  local value = cjson.decode(res.body)
+                  ngx.header.content_type = "text/html; charset=UTF-8"
+                  local session = require "resty.session".open()
+                  session.cookie.domain = ngx.var.webdomain
+                  local url = session.data.host 
+                  ngx.var.targeturl = session.data.host 
+                  session.data.token = value.id_token
+                  session:save()
+                end
+              end
+              ngx.redirect("http://kibana"..ngx.var.webdomain,302)
+          ';
+      }
+    }
+---
+
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: {{ .Values.nginx.appName }}
+  namespace: {{ .Values.nginx.namespace }}
+spec:
+  selector:
+    matchLabels:
+      app: {{ .Values.nginx.appName }}
+  replicas: {{ .Values.nginx.replicaCount }}
+  template:
+    metadata:
+      annotations:
+        sidecar.istio.io/inject: "true"
+      labels:
+        name: {{ .Values.nginx.appName }}
+        app: {{ .Values.nginx.appName }}
+        version: 1.0.0
+    spec:
+      # serviceAccountName: default
+      containers:
+      - name: {{ .Values.nginx.appName }}
+        image: "{{ .Values.nginx.image.repository }}:{{ .Values.nginx.image.tag }}"
+        ports:
+        - name: http
+          protocol: TCP
+          containerPort: 80
+        volumeMounts:
+        - name: nginx-config-path
+          mountPath: /etc/nginx/conf.d/
+      volumes:
+      - name: nginx-config-path
+        configMap:
+          name: nginx-config
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.nginx.appName }}
+  namespace: {{ .Values.nginx.namespace }}
+spec:
+  type: ClusterIP
+  ports:
+  - port: 80
+    targetPort: 80
+  selector:
+    app: {{ .Values.nginx.appName }}
+---

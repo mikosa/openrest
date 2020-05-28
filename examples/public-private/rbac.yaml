@@ -1,0 +1,39 @@
+#enable RBAC in namespace
+apiVersion: "rbac.istio.io/v1alpha1"
+kind: ClusterRbacConfig
+metadata:
+  name: default
+  namespace: website
+spec:
+  mode: 'ON_WITH_INCLUSION'
+  inclusion:
+    namespaces: ["website"]
+--- 
+
+# Servicerole
+apiVersion: "rbac.istio.io/v1alpha1"
+kind: ServiceRole
+metadata:
+  name: mywebsite-role
+  namespace: website
+spec:
+  rules:
+  - services: ["mywebsite.website.svc.cluster.local"]
+    methods: ["GET"]
+    
+--- 
+
+# bind the Servicerole
+apiVersion: "rbac.istio.io/v1alpha1"
+kind: ServiceRoleBinding
+metadata:
+  name: mywebsite-rolebinding
+  namespace: website
+spec:
+  subjects:
+  - properties:
+      request.auth.claims[groups]: "sapgraph-dev"
+  roleRef:
+    kind: ServiceRole
+    name: "mywebsite-role"
+---

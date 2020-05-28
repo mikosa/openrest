@@ -1,0 +1,17 @@
+apiVersion: authentication.istio.io/v1alpha1
+kind: Policy
+metadata:
+  name: kibana-policy
+  namespace: nginx
+spec:
+  targets:
+    - name: kibana
+  # peers:
+  #   - mtls: {}
+  origins:
+    - jwt:
+        issuer: ycloudtest.accounts400.ondemand.com
+        jwksUri: https://api.cockpit.stage.faros.kyma.cx/c4/.well-known/jwks.json
+        jwt_headers:
+        - "myjwt"
+  principalBinding: USE_ORIGIN
